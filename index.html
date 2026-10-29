@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>フォト・フラクタル変換</title>
+<style>
+  :root{--bg:#0b0b10;--panel:#14141c;--line:#2a2a38;--txt:#e8e8f0;--mut:#9a9ab0;--acc:#ffcc33}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);font-family:system-ui,-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif}
+  .app{display:grid;grid-template-columns:300px 1fr;min-height:100vh}
+  aside{background:var(--panel);border-right:1px solid var(--line);padding:18px;overflow:auto;max-height:100vh;position:sticky;top:0}
+  h1{font-size:17px;margin:0 0 4px;letter-spacing:.02em}
+  .sub{color:var(--mut);font-size:12px;margin:0 0 16px;line-height:1.5}
+  .drop{display:block;border:1.5px dashed #444458;border-radius:10px;padding:16px;text-align:center;font-size:13px;color:var(--mut);cursor:pointer;margin-bottom:14px;transition:.15s}
+  .drop.over,.drop:hover{border-color:var(--acc);color:var(--txt)}
+  .drop input{display:none}
+  .presets{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+  button{background:#22222e;color:var(--txt);border:1px solid var(--line);border-radius:7px;padding:7px 10px;font-size:12.5px;cursor:pointer}
+  button:hover{border-color:var(--acc)}
+  button.primary{background:var(--acc);color:#111;border-color:var(--acc);font-weight:600}
+  .ctl{margin:10px 0}
+  .ctl label{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:3px}
+  .ctl label span{color:var(--mut);font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%;accent-color:var(--acc)}
+  .sec{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.1em;margin:18px 0 4px;border-top:1px solid var(--line);padding-top:12px}
+  main{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;gap:10px}
+  #result{max-width:100%;max-height:calc(100vh - 130px);border-radius:6px;box-shadow:0 10px 40px #000a}
+  .status{font-size:12px;color:var(--mut);min-height:16px}
+  .viewbar{display:flex;gap:6px;align-self:stretch;justify-content:center}
+  .viewbar button{padding:8px 14px;font-size:13px}
+  .viewbar button.on,.tools button.on{border-color:var(--acc);color:var(--acc)}
+  .tools{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;align-items:center}
+  .bsz{font-size:12px;color:var(--mut);display:flex;align-items:center;gap:6px}
+  .bsz input{width:110px}
+  #editCv{max-width:100%;max-height:calc(100vh - 150px);border-radius:6px;touch-action:none;cursor:crosshair;box-shadow:0 10px 40px #000a}
+  .row{display:flex;gap:6px}
+  .row button{flex:1}
+  .themes{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}
+  .themes button{padding:6px 2px;font-size:11.5px;position:relative;padding-top:20px}
+  .themes button::before{content:"";position:absolute;top:5px;left:50%;transform:translateX(-50%);width:28px;height:10px;border-radius:3px;background:linear-gradient(90deg,var(--a,#e33) 0 50%,var(--b,#3c3) 50%);outline:1px solid #555}
+  .themes button[data-theme=none]::before{background:linear-gradient(90deg,#f33,#fc3,#3c6,#39f,#a4f)}
+  .themes button.on{border-color:var(--acc);color:var(--acc)}
+  .pick{width:44px;height:28px;background:none;border:1px solid var(--line);border-radius:6px;padding:1px}
+  @media (max-width:760px){.app{grid-template-columns:1fr}aside{position:static;max-height:none;border-right:0;border-bottom:1px solid var(--line)}#result{max-height:none}}
+</style>
+</head>
+<body>
+<div class="app">
+<aside>
+  <h1>フォト・フラクタル変換</h1>
+  <p class="sub">写真を、ネオンの線とガラス片のような色面で描き直します。処理はすべてブラウザ内で行われ、画像はどこにも送信されません。</p>
+
+  <label class="drop" id="drop">
+    <input type="file" id="file" accept="image/*">
+    📷 写真を選ぶ／ここにドロップ
+  </label>
+
+  <div class="presets">
+    <button data-preset="neon">ネオン</button>
+    <button data-preset="glass">ステンドグラス</button>
+    <button data-preset="psy">サイケ</button>
+    <button data-preset="soft">やわらか</button>
+    <button data-preset="mono">白黒</button>
+    <button data-preset="blue">青の花（白地）</button>
+    <button data-preset="ice">氷の結晶（黒地）</button>
+  </div>
+
+  <div class="row" style="margin-bottom:6px">
+    <button id="reseed">🎲 別パターン</button>
+    <button class="primary" id="save">保存用に開く</button>
+  </div>
+  <div class="status" id="saveHint"></div>
+
+  <div class="sec">手描きガイド</div>
+  <p class="sub" style="margin:4px 0 6px">写真を読み込むと、まず元の写真が表示されます。そのまま、花びらの境目などをなぞってください。なぞった線でガラス片が分かれ、光の線もその線に沿います。</p>
+  <div class="ctl"><label>ガイドの効き具合 <span id="v_gstr"></span></label><input type="range" id="gstr" min="0" max="1" step="0.05"></div>
+
+  <div class="sec">ガラス片（色面）</div>
+  <div class="ctl"><label>分割の細かさ <span id="v_cells"></span></label><input type="range" id="cells" min="200" max="8000" step="100"></div>
+  <div class="ctl"><label>輪郭への集中度 <span id="v_focus"></span></label><input type="range" id="focus" min="0" max="1" step="0.05"></div>
+  <div class="ctl"><label>面の立体感 <span id="v_facet"></span></label><input type="range" id="facet" min="0" max="1" step="0.05"></div>
+  <div class="ctl"><label>境界線の明るさ <span id="v_border"></span></label><input type="range" id="border" min="0" max="1" step="0.05"></div>
+
+  <div class="sec">色</div>
+  <div class="ctl"><label>彩度ブースト <span id="v_sat"></span></label><input type="range" id="sat" min="0.5" max="4" step="0.1"></div>
+  <div class="ctl"><label>色のゆらぎ（虹色化） <span id="v_chaos"></span></label><input type="range" id="chaos" min="0" max="180" step="5"></div>
+  <div class="ctl"><label>色相シフト <span id="v_hue"></span></label><input type="range" id="hue" min="0" max="360" step="5"></div>
+  <div class="ctl"><label>色の量（0で完全な白黒） <span id="v_color"></span></label><input type="range" id="color" min="0" max="1" step="0.05"></div>
+  <div class="ctl"><label>暗部の深さ <span id="v_dark"></span></label><input type="range" id="dark" min="0" max="1" step="0.05"></div>
+
+  <div class="ctl"><label>色テーマ（ほかの設定はそのまま）</label>
+    <div class="themes">
+      <button data-theme="none">元の色</button>
+      <button data-theme="#000000,#ffffff" style="--a:#000;--b:#fff">白黒</button>
+      <button data-theme="#ffffff,#141414" style="--a:#fff;--b:#141414">墨絵</button>
+      <button data-theme="#ffffff,#1f4fd1" style="--a:#fff;--b:#1f4fd1">青白</button>
+      <button data-theme="#020814,#4fb3ff" style="--a:#020814;--b:#4fb3ff">夜の青</button>
+      <button data-theme="#000000,#3ddc6a" style="--a:#000;--b:#3ddc6a">緑黒</button>
+      <button data-theme="#000000,#ffc233" style="--a:#000;--b:#ffc233">金黒</button>
+      <button data-theme="#000000,#b36bff" style="--a:#000;--b:#b36bff">紫黒</button>
+      <button data-theme="#f4efe4,#1b2a5c" style="--a:#f4efe4;--b:#1b2a5c">藍染</button>
+      <button data-theme="#f3e6cc,#5a3a1a" style="--a:#f3e6cc;--b:#5a3a1a">セピア</button>
+      <button data-theme="#fff4f4,#c8203a" style="--a:#fff4f4;--b:#c8203a">朱</button>
+    </div>
+    <select id="tone" style="display:none"><option value="none"></option><option value="duo"></option></select>
+    <div class="row" style="margin-top:8px;align-items:center;font-size:12px;color:var(--mut)">
+      地の色 <input type="color" id="bg" class="pick"> 線の色 <input type="color" id="ink" class="pick">
+    </div></div>
+
+  <div class="sec">フラクタル・対称</div>
+  <div class="ctl"><label>万華鏡（対称の数・0でオフ） <span id="v_kal"></span></label><input type="range" id="kal" min="0" max="12" step="1"></div>
+  <div class="ctl"><label>繰り返しの深さ（0でオフ） <span id="v_depth"></span></label><input type="range" id="depth" min="0" max="4" step="1"></div>
+  <div class="ctl"><label>まわりに生える数 <span id="v_copies"></span></label><input type="range" id="copies" min="2" max="9" step="1"></div>
+  <div class="ctl"><label>子どもの大きさ（縮小率） <span id="v_fscale"></span></label><input type="range" id="fscale" min="0.2" max="0.6" step="0.02"></div>
+  <div class="ctl"><label>ねじれ（度） <span id="v_twist"></span></label><input type="range" id="twist" min="0" max="180" step="5"></div>
+
+  <div class="sec">光の線</div>
+  <div class="ctl"><label>線の本数 <span id="v_strokes"></span></label><input type="range" id="strokes" min="0" max="12000" step="200"></div>
+  <div class="ctl"><label>線の長さ <span id="v_len"></span></label><input type="range" id="len" min="5" max="200" step="5"></div>
+  <div class="ctl"><label>放射線の割合 <span id="v_radial"></span></label><input type="range" id="radial" min="0" max="1" step="0.05"></div>
+  <div class="ctl"><label>線の太さ <span id="v_width"></span></label><input type="range" id="width" min="0.3" max="4" step="0.1"></div>
+  <div class="ctl"><label>グロー（発光） <span id="v_glow"></span></label><input type="range" id="glow" min="0" max="1" step="0.05"></div>
+
+  <div class="sec">出力</div>
+  <div class="ctl"><label>出力サイズ（長辺px） <span id="v_size"></span></label><input type="range" id="size" min="400" max="2400" step="100"></div>
+</aside>
+
+<main>
+  <div class="viewbar">
+    <button id="viewEdit">📷 元の写真に線を引く</button><button id="viewResult" class="on">✨ この線で生成した結果を見る</button>
+  </div>
+  <div class="tools" id="tools" style="display:none">
+    <button data-tool="line" class="on">✏️ 境界線</button>
+    <button data-tool="detail">🖌 細かくする</button>
+    <button data-tool="erase">🧽 消しゴム</button>
+    <label class="bsz">太さ <input type="range" id="brush" min="1" max="100" step="1" value="3"> <span id="v_brush">3</span></label>
+    <button id="undo">↶ 戻す</button>
+    <button id="clearG">全部消す</button>
+  </div>
+  <canvas id="editCv" style="display:none"></canvas>
+  <img id="result" alt="変換結果">
+  <div class="status" id="status"></div>
+</main>
+</div>
+
+<script>
+// ---------- presets ----------
+const BASE = {gstr:0.7, kal:0, depth:0, copies:6, fscale:0.4, twist:0, tone:'none', bg:'#000000', ink:'#ffffff'};
+const PRESETS = {
+  neon:  {...BASE, cells:2500, focus:0.7, facet:0.5, border:0.55, sat:2.2, chaos:40,  hue:0, dark:0.6,  strokes:5000, len:60,  radial:0.25, width:1.0, glow:0.55, size:1200, color:1},
+  glass: {...BASE, cells:1200, focus:0.5, facet:0.8, border:0.25, sat:1.8, chaos:20,  hue:0, dark:0.35, strokes:800,  len:30,  radial:0.1,  width:0.8, glow:0.3,  size:1200, color:1},
+  psy:   {...BASE, cells:4000, focus:0.8, facet:0.6, border:0.8,  sat:3.2, chaos:120, hue:0, dark:0.7,  strokes:9000, len:90,  radial:0.4,  width:0.9, glow:0.7,  size:1200, color:1},
+  soft:  {...BASE, cells:1800, focus:0.4, facet:0.3, border:0.2,  sat:1.4, chaos:15,  hue:0, dark:0.2,  strokes:2000, len:40,  radial:0.1,  width:1.4, glow:0.4,  size:1200, color:1},
+  mono:  {...BASE, cells:3000, focus:0.75, facet:0.6, border:0.6, sat:1.0, chaos:0,   hue:0, dark:0.65, strokes:6000, len:70,  radial:0.3,  width:0.9, glow:0.5,  size:1200, color:0},
+  blue:  {...BASE, cells:3500, focus:0.7, facet:0.7, border:0.5,  sat:1.0, chaos:0,   hue:0, dark:0.45, strokes:4000, len:60,  radial:0.2,  width:0.8, glow:0.25, size:1200, color:1,
+          kal:8, depth:2, copies:6, fscale:0.38, twist:15, tone:'duo', bg:'#ffffff', ink:'#2a5bd7'},
+  ice:   {...BASE, cells:3000, focus:0.7, facet:0.6, border:0.6,  sat:1.0, chaos:0,   hue:0, dark:0.6,  strokes:6000, len:70,  radial:0.3,  width:0.9, glow:0.5,  size:1200, color:1,
+          kal:6, depth:3, copies:5, fscale:0.35, twist:30, tone:'duo', bg:'#02080c', ink:'#33c6e8'},
+};
+const SKEYS = ['tone','bg','ink'];
+const KEYS = Object.keys(PRESETS.neon).filter(k=>!SKEYS.includes(k));
+let seed = 12345;
+const $ = id => document.getElementById(id);
+
+function setParams(p){ for(const k of KEYS){ $(k).value=p[k]; } for(const k of SKEYS){ $(k).value=p[k]; } showVals(); }
+function getParams(){ const p={}; for(const k of KEYS) p[k]=parseFloat($(k).value); for(const k of SKEYS) p[k]=$(k).value; p.seed=seed; return p; }
+function showVals(){ for(const k of KEYS){ $('v_'+k).textContent=$(k).value; } }
+
+// ---------- helpers ----------
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function rgb2hsl(r,g,b){r/=255;g/=255;b/=255;const mx=Math.max(r,g,b),mn=Math.min(r,g,b);let h=0,s=0,l=(mx+mn)/2;
+  if(mx!==mn){const d=mx-mn;s=l>0.5?d/(2-mx-mn):d/(mx+mn);
+    if(mx===r)h=(g-b)/d+(g<b?6:0);else if(mx===g)h=(b-r)/d+2;else h=(r-g)/d+4;h*=60;}
+  return [h,s,l];}
+function hsl2rgb(h,s,l){h=((h%360)+360)%360/360;let r,g,b;
+  if(s===0){r=g=b=l}else{const q=l<0.5?l*(1+s):l+s-l*s,p=2*l-q;
+    const f=t=>{if(t<0)t+=1;if(t>1)t-=1;if(t<1/6)return p+(q-p)*6*t;if(t<1/2)return q;if(t<2/3)return p+(q-p)*(2/3-t)*6;return p};
+    r=f(h+1/3);g=f(h);b=f(h-1/3);}
+  return [r*255,g*255,b*255];}
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+
+function boxBlur(src,W,H,r){
+  const tmp=new Float32Array(W*H),out=new Float32Array(W*H);
+  for(let y=0;y<H;y++){let acc=0,cnt=0;const o=y*W;
+    for(let x=-r;x<W;x++){ if(x+r<W){acc+=src[o+x+r];cnt++;} if(x-r-1>=0){acc-=src[o+x-r-1];cnt--;} if(x>=0)tmp[o+x]=acc/cnt; }}
+  for(let x=0;x<W;x++){let acc=0,cnt=0;
+    for(let y=-r;y<H;y++){ if(y+r<H){acc+=tmp[(y+r)*W+x];cnt++;} if(y-r-1>=0){acc-=tmp[(y-r-1)*W+x];cnt--;} if(y>=0)out[y*W+x]=acc/cnt; }}
+  return out;
+}
+
+// smooth value noise for hue variation
+function makeNoise(rnd){
+  const N=256,perm=new Uint8Array(512),val=new Float32Array(N);
+  for(let i=0;i<N;i++){perm[i]=i;val[i]=rnd()*2-1}
+  for(let i=N-1;i>0;i--){const j=Math.floor(rnd()*(i+1));[perm[i],perm[j]]=[perm[j],perm[i]]}
+  for(let i=0;i<N;i++)perm[i+N]=perm[i];
+  const sm=t=>t*t*(3-2*t);
+  return (x,y)=>{const xi=Math.floor(x),yi=Math.floor(y),xf=x-xi,yf=y-yi;
+    const a=val[perm[(xi&255)+perm[yi&255]]],b=val[perm[((xi+1)&255)+perm[yi&255]]],
+          c=val[perm[(xi&255)+perm[(yi+1)&255]]],d=val[perm[((xi+1)&255)+perm[(yi+1)&255]]];
+    const u=sm(xf),v=sm(yf);return (a*(1-u)+b*u)*(1-v)+(c*(1-u)+d*u)*v;};
+}
+
+// ---------- source image ----------
+let srcImg=null;
+function makeSample(){
+  const c=document.createElement('canvas');c.width=1000;c.height=1200;const g=c.getContext('2d');
+  const bg=g.createLinearGradient(0,0,0,1200);bg.addColorStop(0,'#2b3a55');bg.addColorStop(1,'#0e1424');g.fillStyle=bg;g.fillRect(0,0,1000,1200);
+  // simple flower-like subject so the sample has edges and colour
+  g.save();g.translate(500,560);
+  for(let i=0;i<12;i++){g.rotate(Math.PI/6);const pg=g.createRadialGradient(0,-200,10,0,-200,180);
+    pg.addColorStop(0,'#ffd36b');pg.addColorStop(1,'#d2452f');g.fillStyle=pg;g.beginPath();g.ellipse(0,-200,70,190,0,0,Math.PI*2);g.fill();}
+  const cg=g.createRadialGradient(0,0,10,0,0,130);cg.addColorStop(0,'#3a2a12');cg.addColorStop(1,'#7a4f1c');g.fillStyle=cg;g.beginPath();g.arc(0,0,130,0,Math.PI*2);g.fill();
+  g.restore();
+  g.strokeStyle='#3f8a4a';g.lineWidth=26;g.beginPath();g.moveTo(500,900);g.bezierCurveTo(520,1000,470,1100,500,1200);g.stroke();
+  for(let i=0;i<60;i++){g.fillStyle=`hsla(${200+Math.random()*60},70%,${50+Math.random()*30}%,.5)`;g.beginPath();g.arc(Math.random()*1000,Math.random()*1200,4+Math.random()*14,0,7);g.fill();}
+  const img=new Image();img.onload=()=>{srcImg=img;createGuides();schedule()};img.src=c.toDataURL();
+}
+
+function loadFile(f){
+  if(!f||!f.type.startsWith('image/'))return;
+  const url=URL.createObjectURL(f);const img=new Image();
+  img.onload=()=>{srcImg=img;createGuides();setView(true);schedule()};img.src=url;
+}
+
+// ---------- hand-drawn guides ----------
+// gLine: boundary lines (cells are split along them).  gDet: areas to make finer.
+let gLine=null,gDet=null,tool='line',editing=false,undoStack=[];
+const TOOL_SIZE={line:3,detail:40,erase:24};
+function createGuides(){
+  const w=srcImg.naturalWidth,h=srcImg.naturalHeight,k=Math.min(1,1600/Math.max(w,h));
+  const mk=()=>{const c=document.createElement('canvas');c.width=Math.round(w*k);c.height=Math.round(h*k);return c;};
+  gLine=mk();gDet=mk();undoStack=[];if(editing)drawEditView();
+}
+function guideAlpha(gc,W,H){
+  if(!gc)return null;
+  const t=document.createElement('canvas');t.width=W;t.height=H;const x=t.getContext('2d');x.drawImage(gc,0,0,W,H);
+  const d=x.getImageData(0,0,W,H).data,a=new Float32Array(W*H);let any=false;
+  for(let i=0;i<W*H;i++){const v=d[i*4+3]/255;a[i]=v;if(v>0.02)any=true;}
+  return any?a:null;
+}
+function drawEditView(){
+  const ec=$('editCv');if(!srcImg||!gLine)return;
+  ec.width=gLine.width;ec.height=gLine.height;const x=ec.getContext('2d');
+  x.drawImage(srcImg,0,0,ec.width,ec.height);
+  x.globalAlpha=0.4;x.drawImage(gDet,0,0);x.globalAlpha=1;
+  x.save();x.filter='drop-shadow(0 0 1.5px #000) drop-shadow(0 0 1px #000)';x.drawImage(gLine,0,0);x.restore();
+}
+function pushUndo(){
+  const snap=[gLine,gDet].map(c=>{const n=document.createElement('canvas');n.width=c.width;n.height=c.height;n.getContext('2d').drawImage(c,0,0);return n;});
+  undoStack.push(snap);if(undoStack.length>8)undoStack.shift();
+}
+function setTool(t){tool=t;document.querySelectorAll('[data-tool]').forEach(b=>b.classList.toggle('on',b.dataset.tool===t));
+  $('brush').value=TOOL_SIZE[t];$('v_brush').textContent=TOOL_SIZE[t];}
+function setView(edit){
+  editing=edit;$('editCv').style.display=edit?'block':'none';$('result').style.display=edit?'none':'block';
+  $('tools').style.display=edit?'flex':'none';
+  $('viewEdit').classList.toggle('on',edit);$('viewResult').classList.toggle('on',!edit);
+  if(edit)drawEditView();
+}
+
+// ---------- main render ----------
+function render(){
+  if(!srcImg)return;
+  const P=getParams();const t0=performance.now();
+  const rnd=mulberry32(P.seed);const noise=makeNoise(rnd);
+  const sc=P.size/Math.max(srcImg.naturalWidth,srcImg.naturalHeight);
+  const W=Math.max(16,Math.round(srcImg.naturalWidth*sc)),H=Math.max(16,Math.round(srcImg.naturalHeight*sc));
+  const cv=document.createElement('canvas');cv.width=W;cv.height=H;const ctx=cv.getContext('2d');
+  ctx.drawImage(srcImg,0,0,W,H);
+  const src=ctx.getImageData(0,0,W,H).data;
+  const NP=W*H;
+
+  // luminance + gradient
+  const L=new Float32Array(NP);
+  for(let i=0,j=0;i<NP;i++,j+=4)L[i]=(0.299*src[j]+0.587*src[j+1]+0.114*src[j+2])/255;
+  const Lb=boxBlur(L,W,H,Math.max(1,Math.round(Math.min(W,H)/400)));
+  const lineA=guideAlpha(gLine,W,H),detA=guideAlpha(gDet,W,H);
+  if(lineA){ // drawn lines become strong edges, so strokes and fine cells gather along them
+    const lb=boxBlur(lineA,W,H,1);for(let i=0;i<NP;i++)Lb[i]+=lb[i]*0.45*P.gstr;}
+  const gx=new Float32Array(NP),gy=new Float32Array(NP),mag=new Float32Array(NP);
+  let mmax=1e-6;
+  for(let y=1;y<H-1;y++)for(let x=1;x<W-1;x++){const i=y*W+x;
+    const a=Lb[i-W-1],b=Lb[i-W],c=Lb[i-W+1],d=Lb[i-1],f=Lb[i+1],g=Lb[i+W-1],h=Lb[i+W],k=Lb[i+W+1];
+    const X=(c+2*f+k)-(a+2*d+g),Y=(g+2*h+k)-(a+2*b+c);gx[i]=X;gy[i]=Y;const m=Math.hypot(X,Y);mag[i]=m;if(m>mmax)mmax=m;}
+  // normalise with soft cap so a few hard edges don't dominate
+  const cap=mmax*0.45;for(let i=0;i<NP;i++)mag[i]=Math.min(1,mag[i]/cap);
+  // smoothed gradient field for stroke direction
+  const sgx=boxBlur(gx,W,H,3),sgy=boxBlur(gy,W,H,3);
+
+  // ---- seeds (denser on edges) ----
+  let detFrac=0;if(detA){for(let i=0;i<NP;i++)detFrac+=detA[i];detFrac/=NP;}
+  const N0=Math.round(P.cells*(W*H)/(1200*1200)*(1+4*detFrac))||1;
+  let N=N0;
+  let sx=new Float32Array(N),sy=new Float32Array(N);
+  for(let n=0;n<N;n++){let x,y,tries=0,acc;
+    do{x=rnd()*W;y=rnd()*H;tries++;const i=(y|0)*W+(x|0);
+      acc=(1-P.focus)+P.focus*Math.sqrt(mag[i]);
+      if(detA)acc=detA[i]>0.1?Math.max(acc,detA[i]):acc*0.4;
+    }while(tries<40&&rnd()>acc);
+    sx[n]=x;sy[n]=y;}
+
+  // ---- grid for nearest-seed lookup ----
+  const cs=Math.max(3,Math.sqrt(W*H/N));const GW=Math.ceil(W/cs),GH=Math.ceil(H/cs);
+  const bucket=Array.from({length:GW*GH},()=>[]);
+  for(let n=0;n<N;n++)bucket[Math.min(GH-1,(sy[n]/cs)|0)*GW+Math.min(GW-1,(sx[n]/cs)|0)].push(n);
+  let label=new Int32Array(NP);
+  for(let y=0;y<H;y++){const cy=(y/cs)|0;for(let x=0;x<W;x++){const cx=(x/cs)|0;
+    let best=-1,bd=1e18;
+    for(let r=1;r<=4&&best<0||r<=1;r++){
+      for(let yy=Math.max(0,cy-r);yy<=Math.min(GH-1,cy+r);yy++)for(let xx=Math.max(0,cx-r);xx<=Math.min(GW-1,cx+r);xx++){
+        const B=bucket[yy*GW+xx];for(let q=0;q<B.length;q++){const n=B[q];const dx=sx[n]-x,dy=sy[n]-y,dd=dx*dx+dy*dy;if(dd<bd){bd=dd;best=n}}}
+      if(best>=0)break;}
+    label[y*W+x]=best<0?0:best;}}
+
+  // ---- split cells along drawn boundary lines ----
+  if(lineA){
+    const line=new Uint8Array(NP);for(let i=0;i<NP;i++)line[i]=lineA[i]>0.3?1:0;
+    const reg=new Int32Array(NP).fill(-1),st=new Int32Array(NP);let rc=0;
+    for(let i0=0;i0<NP;i0++){if(line[i0]||reg[i0]>=0)continue;let sp=0;st[sp++]=i0;reg[i0]=rc;
+      while(sp){const p=st[--sp],x=p%W;
+        if(x>0&&!line[p-1]&&reg[p-1]<0){reg[p-1]=rc;st[sp++]=p-1;}
+        if(x<W-1&&!line[p+1]&&reg[p+1]<0){reg[p+1]=rc;st[sp++]=p+1;}
+        if(p>=W&&!line[p-W]&&reg[p-W]<0){reg[p-W]=rc;st[sp++]=p-W;}
+        if(p<NP-W&&!line[p+W]&&reg[p+W]<0){reg[p+W]=rc;st[sp++]=p+W;}}
+      rc++;}
+    const map=new Map();let nn=0;const nl=new Int32Array(NP);
+    for(let i=0;i<NP;i++){const r=reg[i]<0?rc:reg[i];const key=label[i]*(rc+1)+r;let v=map.get(key);
+      if(v===undefined){v=nn++;map.set(key,v);}nl[i]=v;}
+    label=nl;N=nn;
+    // new cells: use their centroids as centres
+    const ax=new Float64Array(N),ay=new Float64Array(N),ac=new Float64Array(N);
+    for(let i=0;i<NP;i++){const n=label[i];ax[n]+=i%W;ay[n]+=(i/W)|0;ac[n]++;}
+    sx=new Float32Array(N);sy=new Float32Array(N);for(let n=0;n<N;n++){sx[n]=ax[n]/ac[n];sy[n]=ay[n]/ac[n];}
+  }
+
+  // ---- cell mean colours ----
+  const sr=new Float32Array(N),sg=new Float32Array(N),sb=new Float32Array(N),cnt=new Float32Array(N),me=new Float32Array(N);
+  for(let i=0,j=0;i<NP;i++,j+=4){const n=label[i];sr[n]+=src[j];sg[n]+=src[j+1];sb[n]+=src[j+2];me[n]+=mag[i];cnt[n]++;}
+  const cr=new Float32Array(N),cg=new Float32Array(N),cb=new Float32Array(N),cl=new Float32Array(N);
+  const dirx=new Float32Array(N),diry=new Float32Array(N);
+  const nsc=3/Math.max(W,H);
+  for(let n=0;n<N;n++){const c=cnt[n]||1;
+    let [h,s,l]=rgb2hsl(sr[n]/c,sg[n]/c,sb[n]/c);
+    h+=P.hue+P.chaos*noise(sx[n]*nsc,sy[n]*nsc)+(rnd()-0.5)*P.chaos*0.3;
+    s=clamp(s*P.sat+0.15*P.sat,0,1);
+    l=clamp(0.5+(l-0.5)*1.35+(rnd()-0.5)*0.12,0.03,0.85);
+    l=Math.pow(l,1+P.dark*1.4)*(1+P.dark*0.4);   // push shadows down
+    l=clamp(l,0.02,0.72);
+    const [r,g,b]=hsl2rgb(h,s,l);cr[n]=r;cg[n]=g;cb[n]=b;cl[n]=l;
+    const a=rnd()*Math.PI*2;dirx[n]=Math.cos(a);diry[n]=Math.sin(a);}
+
+  // ---- paint facets + borders ----
+  const out=ctx.createImageData(W,H);const o=out.data;
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){const i=y*W+x,n=label[i],j=i*4;
+    const sh=1+P.facet*0.55*((x-sx[n])*dirx[n]+(y-sy[n])*diry[n])/cs;
+    let r=cr[n]*sh,g=cg[n]*sh,b=cb[n]*sh;
+    const isB=(x<W-1&&label[i+1]!==n)||(y<H-1&&label[i+W]!==n);
+    if(isB){
+      // bright neon seam or dark lead-line depending on setting
+      const k=P.border;const bl=0.35+0.65*me[n]/(cnt[n]||1);
+      r=r*(1-k)*0.4+k*Math.min(255,cr[n]*2.2+60)*bl; g=g*(1-k)*0.4+k*Math.min(255,cg[n]*2.2+60)*bl; b=b*(1-k)*0.4+k*Math.min(255,cb[n]*2.2+60)*bl;
+    }
+    o[j]=clamp(r,0,255);o[j+1]=clamp(g,0,255);o[j+2]=clamp(b,0,255);o[j+3]=255;}
+  ctx.putImageData(out,0,0);
+
+  // ---- light strokes (flow along edges + radial whiskers) ----
+  const M=Math.round(P.strokes*(W*H)/(1200*1200));
+  const step=Math.max(1.2,Math.max(W,H)/700);const lenScale=Math.max(W,H)/1200;
+  ctx.globalCompositeOperation='lighter';ctx.lineCap='round';ctx.lineJoin='round';
+  for(let k=0;k<M;k++){
+    let x,y,tries=0,i;
+    do{x=rnd()*W;y=rnd()*H;i=(y|0)*W+(x|0);tries++;}while(tries<40&&rnd()>mag[i]*mag[i]*1.5+0.008);
+    const n=label[i];
+    const [h0,s0,l0]=rgb2hsl(cr[n],cg[n],cb[n]);
+    const h=h0+(rnd()-0.5)*(30+P.chaos*0.6);
+    const [r,g,b]=hsl2rgb(h,1,clamp(0.5+rnd()*0.25,0,1));
+    const radial=rnd()<P.radial;
+    const steps=Math.round(P.len*lenScale*(0.3+rnd()*1.2)/step*2);
+    const fa=noise(x*nsc*2,y*nsc*2)*Math.PI*2;  // fallback flow in flat areas
+    let px=sgx[i],py=sgy[i];let m=Math.hypot(px,py)||1;
+    let dx=radial?px/m:-py/m,dy=radial?py/m:px/m;
+    if(mag[i]<0.25){const q=mag[i]/0.25;dx=dx*q+Math.cos(fa)*(1-q);dy=dy*q+Math.sin(fa)*(1-q);const d=Math.hypot(dx,dy)||1;dx/=d;dy/=d;}
+    if(rnd()<0.5){dx=-dx;dy=-dy}
+    const pts=[x,y];
+    for(let s=0;s<steps;s++){
+      const ii=(clamp(y,0,H-1)|0)*W+(clamp(x,0,W-1)|0);
+      let ax=sgx[ii],ay=sgy[ii];const am=Math.hypot(ax,ay);
+      const lm=Math.min(1,mag[ii]*3);
+      if(am>1e-4){ let tx,ty; if(radial){tx=ax/am;ty=ay/am}else{tx=-ay/am;ty=ax/am}
+        if(tx*dx+ty*dy<0){tx=-tx;ty=-ty}
+        const w=(radial?0.15:0.45)*lm; dx=dx*(1-w)+tx*w; dy=dy*(1-w)+ty*w; }
+      if(lm<1){const na=noise(x*nsc*2,y*nsc*2)*Math.PI*2;let nx=Math.cos(na),ny=Math.sin(na);if(nx*dx+ny*dy<0){nx=-nx;ny=-ny}
+        const w=0.2*(1-lm);dx=dx*(1-w)+nx*w;dy=dy*(1-w)+ny*w;}
+      // a little wander
+      const wa=(rnd()-0.5)*0.25;const cdx=dx*Math.cos(wa)-dy*Math.sin(wa),cdy=dx*Math.sin(wa)+dy*Math.cos(wa);
+      const dm=Math.hypot(cdx,cdy)||1;dx=cdx/dm;dy=cdy/dm;
+      x+=dx*step;y+=dy*step;if(x<0||y<0||x>=W||y>=H)break;pts.push(x,y);}
+    if(pts.length<4)continue;
+    const lw=P.width*lenScale*(0.4+rnd()*1.0);
+    const col=`${r|0},${g|0},${b|0}`;
+    ctx.beginPath();ctx.moveTo(pts[0],pts[1]);for(let q=2;q<pts.length;q+=2)ctx.lineTo(pts[q],pts[q+1]);
+    ctx.strokeStyle=`rgba(${col},0.07)`;ctx.lineWidth=lw*4;ctx.stroke();
+    ctx.strokeStyle=`rgba(${col},${0.35+rnd()*0.4})`;ctx.lineWidth=lw;ctx.stroke();
+  }
+  ctx.globalCompositeOperation='source-over';
+
+  // ---- bloom ----
+  if(P.glow>0){
+    const bc=document.createElement('canvas');bc.width=W;bc.height=H;const bx=bc.getContext('2d');
+    const rad=Math.max(2,Math.round(Math.max(W,H)/90));
+    bx.filter=`blur(${rad}px) brightness(1.3)`;bx.drawImage(cv,0,0);
+    ctx.globalCompositeOperation='screen';ctx.globalAlpha=P.glow*0.8;ctx.drawImage(bc,0,0);
+    ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';
+  }
+
+  // ---- kaleidoscope (mirror symmetry) ----
+  let art=cv;
+  if(P.kal>=2){
+    const kc=document.createElement('canvas');kc.width=W;kc.height=H;const kx=kc.getContext('2d');
+    const th=Math.PI/P.kal,R=Math.hypot(W,H),cx=W/2,cy=H/2;
+    // enlarge the source so the mirrored wedge never runs past the photo's edge
+    let minEdge=1e9;for(let q=0;q<=20;q++){const a=th*q/20;minEdge=Math.min(minEdge,Math.min(cx/Math.max(1e-6,Math.abs(Math.cos(a))),cy/Math.max(1e-6,Math.abs(Math.sin(a)))));}
+    const f=Math.max(1,(R/2)/minEdge);
+    for(let k=0;k<P.kal;k++)for(const m of [1,-1]){
+      kx.save();kx.translate(cx,cy);kx.rotate(2*k*th);kx.scale(1,m);
+      kx.beginPath();kx.moveTo(0,0);kx.arc(0,0,R,-0.004,th+0.004);kx.closePath();kx.clip();
+      kx.drawImage(cv,-cx*f,-cy*f,W*f,H*f);kx.restore();}
+    art=kc;
+  }
+  // ---- fractal repetition: the picture grows smaller copies of itself, which grow copies, ... ----
+  if(P.depth>0){
+    const S=Math.round(Math.min(W,H));
+    const mc=document.createElement('canvas');mc.width=S;mc.height=S;const mx=mc.getContext('2d');
+    mx.drawImage(art,(W-S)/2,(H-S)/2,S,S,0,0,S,S);
+    mx.globalCompositeOperation='destination-in';
+    const rg=mx.createRadialGradient(S/2,S/2,S*0.28,S/2,S/2,S/2);rg.addColorStop(0,'rgba(0,0,0,1)');rg.addColorStop(1,'rgba(0,0,0,0)');
+    mx.fillStyle=rg;mx.fillRect(0,0,S,S);
+    const fc=document.createElement('canvas');fc.width=W;fc.height=H;const fx=fc.getContext('2d');
+    fx.drawImage(art,0,0);
+    const tw=P.twist*Math.PI/180;
+    const rec=(x,y,rad,ang,lv)=>{
+      if(rad<2)return;
+      if(lv<P.depth){for(let j=0;j<P.copies;j++){const a=ang+j*2*Math.PI/P.copies+tw;const d=rad*(1+P.fscale)*0.85;
+        rec(x+d*Math.cos(a),y+d*Math.sin(a),rad*P.fscale,a,lv+1);}}
+      fx.save();fx.translate(x,y);fx.rotate(lv?ang+Math.PI/2:0);fx.drawImage(mc,-rad,-rad,rad*2,rad*2);fx.restore();
+    };
+    rec(W/2,H/2,S*0.36,-Math.PI/2+tw,0);
+    art=fc;
+  }
+  if(art!==cv){ctx.clearRect(0,0,W,H);ctx.drawImage(art,0,0);}
+
+  // ---- monochrome mix ----
+  if(P.color<1){
+    const id=ctx.getImageData(0,0,W,H),d=id.data,c=P.color;
+    for(let j=0;j<d.length;j+=4){
+      let y=0.299*d[j]+0.587*d[j+1]+0.114*d[j+2];
+      y=255*Math.pow(y/255,0.9);              // keep highlights crisp
+      d[j]=y+(d[j]-y)*c;d[j+1]=y+(d[j+1]-y)*c;d[j+2]=y+(d[j+2]-y)*c;}
+    ctx.putImageData(id,0,0);
+  }
+
+  // ---- two-colour tone mapping: dark parts -> ground colour, bright lines -> line colour ----
+  if(P.tone==='duo'){
+    const hex=h=>[1,3,5].map(i=>parseInt(h.substr(i,2),16));
+    const B=hex(P.bg),I=hex(P.ink);
+    const light=(0.299*B[0]+0.587*B[1]+0.114*B[2])/255>0.5;
+    // the brightest highlights go past the line colour: toward black on a light ground, toward white on a dark one
+    const Hc=I.map(v=>light?v*0.3:v+(255-v)*0.7);
+    const mix=(a,b,u)=>a.map((v,i)=>v+(b[i]-v)*u);
+    const stops=[[0,B],[0.45,mix(B,I,0.5)],[0.85,I],[1,Hc]];
+    const lut=new Uint8ClampedArray(256*3);
+    for(let v=0;v<256;v++){const t=light?Math.pow(v/255,1.4):v/255;let k=0;while(k<stops.length-2&&t>stops[k+1][0])k++;
+      const a=stops[k],b=stops[k+1],u=clamp((t-a[0])/(b[0]-a[0]),0,1);
+      for(let c=0;c<3;c++)lut[v*3+c]=a[1][c]+(b[1][c]-a[1][c])*u;}
+    const id=ctx.getImageData(0,0,W,H),d=id.data;
+    // auto-levels: spread the brightness so very bright (or dark) photos still keep detail
+    const hist=new Float64Array(256),Y=new Uint8Array(d.length/4);
+    for(let j=0,q=0;j<d.length;j+=4,q++){const y=(0.299*d[j]+0.587*d[j+1]+0.114*d[j+2])|0;Y[q]=y;hist[y]++;}
+    const cdf=new Float64Array(256);let acc=0;for(let v=0;v<256;v++){acc+=hist[v];cdf[v]=acc/Y.length;}
+    let lo=0,hi=255;while(lo<254&&cdf[lo]<0.02)lo++;while(hi>lo+1&&cdf[hi-1]>0.985)hi--;
+    const remap=new Uint8Array(256);
+    for(let v=0;v<256;v++){const st=clamp((v-lo)/(hi-lo),0,1);remap[v]=Math.round(255*clamp(0.55*cdf[v]+0.45*st,0,1));}
+    for(let j=0,q=0;j<d.length;j+=4,q++){const y=remap[Y[q]];
+      d[j]=lut[y*3];d[j+1]=lut[y*3+1];d[j+2]=lut[y*3+2];}
+    ctx.putImageData(id,0,0);
+  }
+
+  $('result').src=cv.toDataURL('image/png');
+  $('status').textContent=`${W}×${H}px ・ ガラス片 ${N} ・ 光の線 ${M} ・ ${((performance.now()-t0)/1000).toFixed(1)}秒`;
+}
+
+let timer=null;
+function schedule(){
+  clearTimeout(timer);$('status').textContent='描画中…';
+  timer=setTimeout(()=>requestAnimationFrame(()=>setTimeout(()=>{try{render()}catch(e){$('status').textContent='エラー: '+e.message}},0)),180);
+}
+
+// ---------- wiring ----------
+for(const k of KEYS)$(k).addEventListener('input',()=>{showVals();schedule()});
+for(const k of ['bg','ink']){$(k).addEventListener('input',()=>{$('tone').value='duo';markTheme();schedule()});}
+function markTheme(){const cur=$('tone').value==='none'?'none':$('bg').value+','+$('ink').value;
+  document.querySelectorAll('[data-theme]').forEach(b=>b.classList.toggle('on',b.dataset.theme.toLowerCase()===cur.toLowerCase()));}
+document.querySelectorAll('[data-theme]').forEach(b=>b.onclick=()=>{
+  const t=b.dataset.theme;if(t==='none'){$('tone').value='none';}else{const [a,c]=t.split(',');$('tone').value='duo';$('bg').value=a;$('ink').value=c;}
+  markTheme();schedule();});
+document.querySelectorAll('[data-preset]').forEach(b=>b.onclick=()=>{setParams(PRESETS[b.dataset.preset]);markTheme();schedule()});
+$('reseed').onclick=()=>{seed=(Math.random()*1e9)|0;schedule()};
+$('file').onchange=e=>loadFile(e.target.files[0]);
+const drop=$('drop');
+['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('over')}));
+['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('over')}));
+drop.addEventListener('drop',e=>loadFile(e.dataTransfer.files[0]));
+$('save').onclick=()=>{
+  const src=$('result').src;if(!src)return;
+  const w=window.open();
+  if(w){w.document.write(`<title>fractal</title><body style="margin:0;background:#000"><img src="${src}" style="max-width:100%"></body>`);}
+  else{$('saveHint').textContent='画像を右クリック（スマホは長押し）→「画像を保存」で保存できます。';}
+};
+$('saveHint').textContent='画像を右クリック／長押しでも保存できます。';
+
+$('viewEdit').onclick=()=>setView(true);
+$('viewResult').onclick=()=>setView(false);
+document.querySelectorAll('[data-tool]').forEach(b=>b.onclick=()=>setTool(b.dataset.tool));
+$('brush').oninput=()=>{TOOL_SIZE[tool]=+$('brush').value;$('v_brush').textContent=$('brush').value;};
+$('undo').onclick=()=>{const s=undoStack.pop();if(!s)return;[gLine,gDet].forEach((c,i)=>{const x=c.getContext('2d');x.clearRect(0,0,c.width,c.height);x.drawImage(s[i],0,0);});drawEditView();schedule();};
+$('clearG').onclick=()=>{if(!gLine)return;pushUndo();[gLine,gDet].forEach(c=>c.getContext('2d').clearRect(0,0,c.width,c.height));drawEditView();schedule();};
+(function(){
+  const ec=$('editCv');let last=null;
+  const pos=e=>{const r=ec.getBoundingClientRect();return [(e.clientX-r.left)*ec.width/r.width,(e.clientY-r.top)*ec.height/r.height,ec.width/r.width];};
+  const seg=(a,b)=>{const k=b[2];const sz=TOOL_SIZE[tool]*k;
+    const targets=tool==='erase'?[gLine,gDet]:[tool==='line'?gLine:gDet];
+    for(const c of targets){const x=c.getContext('2d');x.save();
+      x.globalCompositeOperation=tool==='erase'?'destination-out':'source-over';
+      x.strokeStyle=tool==='detail'?'#ff3cc8':'#00e5ff';x.fillStyle=x.strokeStyle;x.lineWidth=sz;x.lineCap='round';x.lineJoin='round';
+      x.beginPath();x.moveTo(a[0],a[1]);x.lineTo(b[0]+0.01,b[1]);x.stroke();x.restore();}
+    drawEditView();};
+  ec.addEventListener('pointerdown',e=>{if(!gLine)return;e.preventDefault();ec.setPointerCapture(e.pointerId);pushUndo();last=pos(e);seg(last,last);});
+  ec.addEventListener('pointermove',e=>{if(!last)return;const p=pos(e);seg(last,p);last=p;});
+  const end=()=>{if(last){last=null;schedule();}};
+  ec.addEventListener('pointerup',end);ec.addEventListener('pointercancel',end);
+})();
+setParams(PRESETS.neon);markTheme();
+makeSample();
+</script>
+</body>
+</html>
