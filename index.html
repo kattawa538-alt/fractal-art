@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>フォト・フラクタル変換</title>
 <style>
+  /* ===== 画面のデザイン（色・配置・ボタンの見た目） ===== */
   :root{--bg:#0b0b10;--panel:#14141c;--line:#2a2a38;--txt:#e8e8f0;--mut:#9a9ab0;--acc:#ffcc33}
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--txt);font-family:system-ui,-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif}
@@ -27,6 +28,9 @@
   main{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;gap:10px}
   #result{max-width:100%;max-height:calc(100vh - 130px);border-radius:6px;box-shadow:0 10px 40px #000a}
   .status{font-size:12px;color:var(--mut);min-height:16px}
+  .sw{display:flex;align-items:center;gap:7px;cursor:pointer;color:var(--txt);font-size:12px;letter-spacing:.05em}
+  .sw input{width:16px;height:16px;accent-color:var(--acc);margin:0}
+  .off{opacity:.35;pointer-events:none}
   .viewbar{display:flex;gap:6px;align-self:stretch;justify-content:center}
   .viewbar button{padding:8px 14px;font-size:13px}
   .viewbar button.on,.tools button.on{border-color:var(--acc);color:var(--acc)}
@@ -47,6 +51,7 @@
 </head>
 <body>
 <div class="app">
+<!-- ===== 左側：操作パネル（写真の読み込み・プリセット・スライダー） ===== -->
 <aside>
   <h1>フォト・フラクタル変換</h1>
   <p class="sub">写真を、ネオンの線とガラス片のような色面で描き直します。処理はすべてブラウザ内で行われ、画像はどこにも送信されません。</p>
@@ -68,7 +73,7 @@
 
   <div class="row" style="margin-bottom:6px">
     <button id="reseed">🎲 別パターン</button>
-    <button class="primary" id="save">保存用に開く</button>
+    <button class="primary" id="save">💾 画像を保存</button>
   </div>
   <div class="status" id="saveHint"></div>
 
@@ -76,7 +81,7 @@
   <p class="sub" style="margin:4px 0 6px">写真を読み込むと、まず元の写真が表示されます。そのまま、花びらの境目などをなぞってください。なぞった線でガラス片が分かれ、光の線もその線に沿います。</p>
   <div class="ctl"><label>ガイドの効き具合 <span id="v_gstr"></span></label><input type="range" id="gstr" min="0" max="1" step="0.05"></div>
 
-  <div class="sec">ガラス片（色面）</div>
+  <div class="sec"><label class="sw"><input type="checkbox" id="useGlass" checked> ガラス片（ステンドグラス風の色面）</label></div>
   <div class="ctl"><label>分割の細かさ <span id="v_cells"></span></label><input type="range" id="cells" min="200" max="8000" step="100"></div>
   <div class="ctl"><label>輪郭への集中度 <span id="v_focus"></span></label><input type="range" id="focus" min="0" max="1" step="0.05"></div>
   <div class="ctl"><label>面の立体感 <span id="v_facet"></span></label><input type="range" id="facet" min="0" max="1" step="0.05"></div>
@@ -115,17 +120,18 @@
   <div class="ctl"><label>子どもの大きさ（縮小率） <span id="v_fscale"></span></label><input type="range" id="fscale" min="0.2" max="0.6" step="0.02"></div>
   <div class="ctl"><label>ねじれ（度） <span id="v_twist"></span></label><input type="range" id="twist" min="0" max="180" step="5"></div>
 
-  <div class="sec">光の線</div>
+  <div class="sec"><label class="sw"><input type="checkbox" id="useLines" checked> 光の線</label></div>
   <div class="ctl"><label>線の本数 <span id="v_strokes"></span></label><input type="range" id="strokes" min="0" max="12000" step="200"></div>
   <div class="ctl"><label>線の長さ <span id="v_len"></span></label><input type="range" id="len" min="5" max="200" step="5"></div>
   <div class="ctl"><label>放射線の割合 <span id="v_radial"></span></label><input type="range" id="radial" min="0" max="1" step="0.05"></div>
   <div class="ctl"><label>線の太さ <span id="v_width"></span></label><input type="range" id="width" min="0.3" max="4" step="0.1"></div>
-  <div class="ctl"><label>グロー（発光） <span id="v_glow"></span></label><input type="range" id="glow" min="0" max="1" step="0.05"></div>
+  <div class="ctl"><label><span style="color:var(--txt)"><input type="checkbox" id="useGlow" checked style="vertical-align:-2px;accent-color:var(--acc)"> グロー（発光）</span> <span id="v_glow"></span></label><input type="range" id="glow" min="0" max="1" step="0.05"></div>
 
   <div class="sec">出力</div>
   <div class="ctl"><label>出力サイズ（長辺px） <span id="v_size"></span></label><input type="range" id="size" min="400" max="2400" step="100"></div>
 </aside>
 
+<!-- ===== 右側：表示エリア（元の写真に線を引く画面 ／ 変換結果） ===== -->
 <main>
   <div class="viewbar">
     <button id="viewEdit">📷 元の写真に線を引く</button><button id="viewResult" class="on">✨ この線で生成した結果を見る</button>
@@ -145,7 +151,15 @@
 </div>
 
 <script>
-// ---------- presets ----------
+/* ==========================================================
+   フォト・フラクタル変換
+   写真 →（輪郭を見つける → ガラス片に分ける → 色を塗る → 光の線を描く
+          → 発光 → 万華鏡・フラクタル → 配色）→ 完成画像
+   という順番で処理します。すべてブラウザの中で計算しています。
+   ========================================================== */
+
+// ---------- プリセット（ボタン1つで切り替わる設定のセット） ----------
+// BASE はどのプリセットにも共通の初期値。各プリセットは BASE を土台に一部だけ上書きしています。
 const BASE = {gstr:0.7, kal:0, depth:0, copies:6, fscale:0.4, twist:0, tone:'none', bg:'#000000', ink:'#ffffff'};
 const PRESETS = {
   neon:  {...BASE, cells:2500, focus:0.7, facet:0.5, border:0.55, sat:2.2, chaos:40,  hue:0, dark:0.6,  strokes:5000, len:60,  radial:0.25, width:1.0, glow:0.55, size:1200, color:1},
@@ -158,28 +172,43 @@ const PRESETS = {
   ice:   {...BASE, cells:3000, focus:0.7, facet:0.6, border:0.6,  sat:1.0, chaos:0,   hue:0, dark:0.6,  strokes:6000, len:70,  radial:0.3,  width:0.9, glow:0.5,  size:1200, color:1,
           kal:6, depth:3, copies:5, fscale:0.35, twist:30, tone:'duo', bg:'#02080c', ink:'#33c6e8'},
 };
+// 数値ではなく文字で持つ設定（配色モードと2色の色）
 const SKEYS = ['tone','bg','ink'];
+// スライダーで動かす数値の設定の名前一覧
 const KEYS = Object.keys(PRESETS.neon).filter(k=>!SKEYS.includes(k));
+// 乱数のタネ。同じタネなら同じ絵が再現される（🎲ボタンで変わる）
 let seed = 12345;
 const $ = id => document.getElementById(id);
 
+// 設定の値をスライダーに反映する
 function setParams(p){ for(const k of KEYS){ $(k).value=p[k]; } for(const k of SKEYS){ $(k).value=p[k]; } showVals(); }
-function getParams(){ const p={}; for(const k of KEYS) p[k]=parseFloat($(k).value); for(const k of SKEYS) p[k]=$(k).value; p.seed=seed; return p; }
+// いまのスライダーの値を読み取って、ひとまとめにして返す
+// オン・オフの切り替え（プリセットを押しても変わらない）
+const BKEYS=['useGlass','useLines','useGlow'];
+function getParams(){ const p={}; for(const k of BKEYS) p[k]=$(k).checked; for(const k of KEYS) p[k]=parseFloat($(k).value); for(const k of SKEYS) p[k]=$(k).value; p.seed=seed; return p; }
+// スライダー横の数字を更新する
 function showVals(){ for(const k of KEYS){ $('v_'+k).textContent=$(k).value; } }
 
-// ---------- helpers ----------
+// ---------- 補助の関数 ----------
+// 「タネ」から決まった並びの乱数を作る関数（同じタネなら毎回同じ乱数列になる）
 function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+// 色を「赤・緑・青(RGB)」から「色相・彩度・明るさ(HSL)」に変換する
+// 色相＝色の種類(0〜360度の色相環)、彩度＝鮮やかさ、明るさ＝明るさ
 function rgb2hsl(r,g,b){r/=255;g/=255;b/=255;const mx=Math.max(r,g,b),mn=Math.min(r,g,b);let h=0,s=0,l=(mx+mn)/2;
   if(mx!==mn){const d=mx-mn;s=l>0.5?d/(2-mx-mn):d/(mx+mn);
     if(mx===r)h=(g-b)/d+(g<b?6:0);else if(mx===g)h=(b-r)/d+2;else h=(r-g)/d+4;h*=60;}
   return [h,s,l];}
+// HSL を RGB に戻す（画面に表示するのは RGB なので）
 function hsl2rgb(h,s,l){h=((h%360)+360)%360/360;let r,g,b;
   if(s===0){r=g=b=l}else{const q=l<0.5?l*(1+s):l+s-l*s,p=2*l-q;
     const f=t=>{if(t<0)t+=1;if(t>1)t-=1;if(t<1/6)return p+(q-p)*6*t;if(t<1/2)return q;if(t<2/3)return p+(q-p)*(2/3-t)*6;return p};
     r=f(h+1/3);g=f(h);b=f(h-1/3);}
   return [r*255,g*255,b*255];}
+// 値を a〜b の範囲に収める
 const clamp=(v,a,b)=>v<a?a:v>b?b:v;
 
+// ぼかし：各点を「まわり r ピクセルの平均」に置きかえる。
+// 横方向→縦方向の順に平均をとると、計算が速く済む。
 function boxBlur(src,W,H,r){
   const tmp=new Float32Array(W*H),out=new Float32Array(W*H);
   for(let y=0;y<H;y++){let acc=0,cnt=0;const o=y*W;
@@ -189,7 +218,8 @@ function boxBlur(src,W,H,r){
   return out;
 }
 
-// smooth value noise for hue variation
+// なめらかなノイズ（場所によってゆっくり変わる乱数）。
+// 色相を場所ごとに少しずつずらして、虹色のグラデーションを作るのに使う。
 function makeNoise(rnd){
   const N=256,perm=new Uint8Array(512),val=new Float32Array(N);
   for(let i=0;i<N;i++){perm[i]=i;val[i]=rnd()*2-1}
@@ -202,12 +232,13 @@ function makeNoise(rnd){
     const u=sm(xf),v=sm(yf);return (a*(1-u)+b*u)*(1-v)+(c*(1-u)+d*u)*v;};
 }
 
-// ---------- source image ----------
+// ---------- 元の写真 ----------
 let srcImg=null;
+let lastCanvas=null;   // 最後に完成した絵（保存に使う）
+// 写真がまだないときに表示する見本の絵（花の形）をプログラムで描く
 function makeSample(){
   const c=document.createElement('canvas');c.width=1000;c.height=1200;const g=c.getContext('2d');
   const bg=g.createLinearGradient(0,0,0,1200);bg.addColorStop(0,'#2b3a55');bg.addColorStop(1,'#0e1424');g.fillStyle=bg;g.fillRect(0,0,1000,1200);
-  // simple flower-like subject so the sample has edges and colour
   g.save();g.translate(500,560);
   for(let i=0;i<12;i++){g.rotate(Math.PI/6);const pg=g.createRadialGradient(0,-200,10,0,-200,180);
     pg.addColorStop(0,'#ffd36b');pg.addColorStop(1,'#d2452f');g.fillStyle=pg;g.beginPath();g.ellipse(0,-200,70,190,0,0,Math.PI*2);g.fill();}
@@ -218,21 +249,39 @@ function makeSample(){
   const img=new Image();img.onload=()=>{srcImg=img;createGuides();schedule()};img.src=c.toDataURL();
 }
 
+// 選んだ写真を読み込む。読み込めたら、元の写真に線を引く画面を開く
 function loadFile(f){
-  if(!f||!f.type.startsWith('image/'))return;
-  const url=URL.createObjectURL(f);const img=new Image();
-  img.onload=()=>{srcImg=img;createGuides();setView(true);schedule()};img.src=url;
+  if(!f)return;
+  // スマホによってはファイルの種類が空になるので、明らかに画像でないものだけ断る
+  if(f.type&&!f.type.startsWith('image/')){$('status').textContent='画像ファイルを選んでください。';return;}
+  $('status').textContent='写真を読み込み中…';
+  // FileReader で写真を「data: 形式」の文字列にして読み込む（公開ページの制限の中でも確実に表示できる形式）
+  const reader=new FileReader();
+  reader.onload=()=>{
+    const img=new Image();
+    img.onload=()=>{srcImg=img;createGuides();setView(true);schedule();};
+    img.onerror=()=>{$('status').textContent='この写真は読み込めませんでした（iPhoneのHEIC形式などは、JPEGに変換するか、スクリーンショットで試してください）。';};
+    img.src=reader.result;
+  };
+  reader.onerror=()=>{$('status').textContent='写真の読み込みに失敗しました。';};
+  reader.readAsDataURL(f);
+  $('file').value='';   // 同じ写真をもう一度選んでも反応するように、選択をリセット
 }
 
-// ---------- hand-drawn guides ----------
-// gLine: boundary lines (cells are split along them).  gDet: areas to make finer.
+// ---------- 手描きガイド ----------
+// gLine：境界線を描くキャンバス（この線でガラス片が分かれる）
+// gDet ：「細かくする」で塗ったところを記録するキャンバス
 let gLine=null,gDet=null,tool='line',editing=false,undoStack=[];
+// 道具ごとのブラシの太さの初期値
 const TOOL_SIZE={line:3,detail:40,erase:24};
+// 写真と同じ縦横比で、何も描かれていないガイド用キャンバスを作る
 function createGuides(){
   const w=srcImg.naturalWidth,h=srcImg.naturalHeight,k=Math.min(1,1600/Math.max(w,h));
   const mk=()=>{const c=document.createElement('canvas');c.width=Math.round(w*k);c.height=Math.round(h*k);return c;};
   gLine=mk();gDet=mk();undoStack=[];if(editing)drawEditView();
 }
+// ガイドのキャンバスを処理サイズに合わせて読み取り、
+// 「各ピクセルにどれだけ描かれているか(0〜1)」の配列にする。何も描かれていなければ null
 function guideAlpha(gc,W,H){
   if(!gc)return null;
   const t=document.createElement('canvas');t.width=W;t.height=H;const x=t.getContext('2d');x.drawImage(gc,0,0,W,H);
@@ -240,6 +289,7 @@ function guideAlpha(gc,W,H){
   for(let i=0;i<W*H;i++){const v=d[i*4+3]/255;a[i]=v;if(v>0.02)any=true;}
   return any?a:null;
 }
+// 線を引く画面を描く：元の写真の上に、塗った範囲と境界線を重ねる
 function drawEditView(){
   const ec=$('editCv');if(!srcImg||!gLine)return;
   ec.width=gLine.width;ec.height=gLine.height;const x=ec.getContext('2d');
@@ -247,12 +297,15 @@ function drawEditView(){
   x.globalAlpha=0.4;x.drawImage(gDet,0,0);x.globalAlpha=1;
   x.save();x.filter='drop-shadow(0 0 1.5px #000) drop-shadow(0 0 1px #000)';x.drawImage(gLine,0,0);x.restore();
 }
+// 「戻す」用に、いまのガイドの状態を保存しておく（最大8回分）
 function pushUndo(){
   const snap=[gLine,gDet].map(c=>{const n=document.createElement('canvas');n.width=c.width;n.height=c.height;n.getContext('2d').drawImage(c,0,0);return n;});
   undoStack.push(snap);if(undoStack.length>8)undoStack.shift();
 }
+// 道具（境界線／細かくする／消しゴム）を切り替える
 function setTool(t){tool=t;document.querySelectorAll('[data-tool]').forEach(b=>b.classList.toggle('on',b.dataset.tool===t));
   $('brush').value=TOOL_SIZE[t];$('v_brush').textContent=TOOL_SIZE[t];}
+// 「元の写真に線を引く画面」と「結果の画面」を切り替える
 function setView(edit){
   editing=edit;$('editCv').style.display=edit?'block':'none';$('result').style.display=edit?'none':'block';
   $('tools').style.display=edit?'flex':'none';
@@ -260,11 +313,13 @@ function setView(edit){
   if(edit)drawEditView();
 }
 
-// ---------- main render ----------
+// ---------- 変換処理の本体 ----------
+// スライダーや線が変わるたびに、この関数が最初から絵を作り直す
 function render(){
   if(!srcImg)return;
   const P=getParams();const t0=performance.now();
   const rnd=mulberry32(P.seed);const noise=makeNoise(rnd);
+  // 出力サイズに合わせて写真を縮小（拡大）し、ピクセルの色を取り出す
   const sc=P.size/Math.max(srcImg.naturalWidth,srcImg.naturalHeight);
   const W=Math.max(16,Math.round(srcImg.naturalWidth*sc)),H=Math.max(16,Math.round(srcImg.naturalHeight*sc));
   const cv=document.createElement('canvas');cv.width=W;cv.height=H;const ctx=cv.getContext('2d');
@@ -272,26 +327,34 @@ function render(){
   const src=ctx.getImageData(0,0,W,H).data;
   const NP=W*H;
 
-  // luminance + gradient
+  // ===== 1. 輪郭を見つける =====
+  // まず各ピクセルの明るさを計算する（人の目は緑を明るく感じるので、緑の割合が大きい）
   const L=new Float32Array(NP);
   for(let i=0,j=0;i<NP;i++,j+=4)L[i]=(0.299*src[j]+0.587*src[j+1]+0.114*src[j+2])/255;
   const Lb=boxBlur(L,W,H,Math.max(1,Math.round(Math.min(W,H)/400)));
   const lineA=guideAlpha(gLine,W,H),detA=guideAlpha(gDet,W,H);
-  if(lineA){ // drawn lines become strong edges, so strokes and fine cells gather along them
+  // 手描きの境界線を「明るさの段差」として足しこむ。
+  // こうすると、描いた線も写真の輪郭と同じように扱われ、ガラス片や光の線が集まる
+  if(lineA){
     const lb=boxBlur(lineA,W,H,1);for(let i=0;i<NP;i++)Lb[i]+=lb[i]*0.45*P.gstr;}
+  // Sobelフィルタ：となりのピクセルとの明るさの差を、横方向(gx)と縦方向(gy)で調べる。
+  // 差が大きいところ＝輪郭。mag はその差の大きさ（輪郭の強さ）。
   const gx=new Float32Array(NP),gy=new Float32Array(NP),mag=new Float32Array(NP);
   let mmax=1e-6;
   for(let y=1;y<H-1;y++)for(let x=1;x<W-1;x++){const i=y*W+x;
     const a=Lb[i-W-1],b=Lb[i-W],c=Lb[i-W+1],d=Lb[i-1],f=Lb[i+1],g=Lb[i+W-1],h=Lb[i+W],k=Lb[i+W+1];
     const X=(c+2*f+k)-(a+2*d+g),Y=(g+2*h+k)-(a+2*b+c);gx[i]=X;gy[i]=Y;const m=Math.hypot(X,Y);mag[i]=m;if(m>mmax)mmax=m;}
-  // normalise with soft cap so a few hard edges don't dominate
+  // 輪郭の強さを0〜1にそろえる（一部の特に強い輪郭だけが目立ちすぎないよう、上限を低めに）
   const cap=mmax*0.45;for(let i=0;i<NP;i++)mag[i]=Math.min(1,mag[i]/cap);
-  // smoothed gradient field for stroke direction
+  // 光の線が進む向きを決めるため、明るさの変化の向きをなめらかにしておく
   const sgx=boxBlur(gx,W,H,3),sgy=boxBlur(gy,W,H,3);
 
-  // ---- seeds (denser on edges) ----
+  // ===== 2. ガラス片の中心（種）を決める =====
+  // ランダムに点を打つが、輪郭の近くほど採用されやすくする（＝輪郭まわりが細かくなる）。
+  // 「細かくする」で塗った場所は、さらに採用されやすくする。
   let detFrac=0;if(detA){for(let i=0;i<NP;i++)detFrac+=detA[i];detFrac/=NP;}
-  const N0=Math.round(P.cells*(W*H)/(1200*1200)*(1+4*detFrac))||1;
+  // ガラス片がオフのときは、種を1つだけにして分割を実質しない
+  const N0=P.useGlass?(Math.round(P.cells*(W*H)/(1200*1200)*(1+4*detFrac))||1):1;
   let N=N0;
   let sx=new Float32Array(N),sy=new Float32Array(N);
   for(let n=0;n<N;n++){let x,y,tries=0,acc;
@@ -301,7 +364,8 @@ function render(){
     }while(tries<40&&rnd()>acc);
     sx[n]=x;sy[n]=y;}
 
-  // ---- grid for nearest-seed lookup ----
+  // ===== 3. ボロノイ分割（各ピクセルを、いちばん近い種の陣地にする） =====
+  // 全部の種と距離を比べると遅いので、画面を格子に区切り、近くのマスにある種だけを調べる
   const cs=Math.max(3,Math.sqrt(W*H/N));const GW=Math.ceil(W/cs),GH=Math.ceil(H/cs);
   const bucket=Array.from({length:GW*GH},()=>[]);
   for(let n=0;n<N;n++)bucket[Math.min(GH-1,(sy[n]/cs)|0)*GW+Math.min(GW-1,(sx[n]/cs)|0)].push(n);
@@ -314,8 +378,11 @@ function render(){
       if(best>=0)break;}
     label[y*W+x]=best<0?0:best;}}
 
-  // ---- split cells along drawn boundary lines ----
-  if(lineA){
+  // ===== 4. 手描きの境界線でガラス片を分ける =====
+  // 線で区切られた領域を、塗りつぶし(flood fill)で1つずつ数える。
+  // 「どの種の陣地か」と「どの領域か」の組み合わせを新しいガラス片とするので、
+  // 線をまたいでいたガラス片は2つに分かれる。
+  if(lineA&&P.useGlass){
     const line=new Uint8Array(NP);for(let i=0;i<NP;i++)line[i]=lineA[i]>0.3?1:0;
     const reg=new Int32Array(NP).fill(-1),st=new Int32Array(NP);let rc=0;
     for(let i0=0;i0<NP;i0++){if(line[i0]||reg[i0]>=0)continue;let sp=0;st[sp++]=i0;reg[i0]=rc;
@@ -329,13 +396,14 @@ function render(){
     for(let i=0;i<NP;i++){const r=reg[i]<0?rc:reg[i];const key=label[i]*(rc+1)+r;let v=map.get(key);
       if(v===undefined){v=nn++;map.set(key,v);}nl[i]=v;}
     label=nl;N=nn;
-    // new cells: use their centroids as centres
+    // 分かれたガラス片の中心は、その片の重心にする
     const ax=new Float64Array(N),ay=new Float64Array(N),ac=new Float64Array(N);
     for(let i=0;i<NP;i++){const n=label[i];ax[n]+=i%W;ay[n]+=(i/W)|0;ac[n]++;}
     sx=new Float32Array(N);sy=new Float32Array(N);for(let n=0;n<N;n++){sx[n]=ax[n]/ac[n];sy[n]=ay[n]/ac[n];}
   }
 
-  // ---- cell mean colours ----
+  // ===== 5. ガラス片ごとの色を決める =====
+  // 各ガラス片に含まれるピクセルの色を平均する
   const sr=new Float32Array(N),sg=new Float32Array(N),sb=new Float32Array(N),cnt=new Float32Array(N),me=new Float32Array(N);
   for(let i=0,j=0;i<NP;i++,j+=4){const n=label[i];sr[n]+=src[j];sg[n]+=src[j+1];sb[n]+=src[j+2];me[n]+=mag[i];cnt[n]++;}
   const cr=new Float32Array(N),cg=new Float32Array(N),cb=new Float32Array(N),cl=new Float32Array(N);
@@ -343,47 +411,70 @@ function render(){
   const nsc=3/Math.max(W,H);
   for(let n=0;n<N;n++){const c=cnt[n]||1;
     let [h,s,l]=rgb2hsl(sr[n]/c,sg[n]/c,sb[n]/c);
+    // 色相をずらす（色相シフト＋場所ごとのゆらぎ＋ガラス片ごとの小さなばらつき）
     h+=P.hue+P.chaos*noise(sx[n]*nsc,sy[n]*nsc)+(rnd()-0.5)*P.chaos*0.3;
+    // 彩度を上げて鮮やかに
     s=clamp(s*P.sat+0.15*P.sat,0,1);
+    // 明暗の差（コントラスト）を強め、少しだけばらつかせてガラス片らしく
     l=clamp(0.5+(l-0.5)*1.35+(rnd()-0.5)*0.12,0.03,0.85);
-    l=Math.pow(l,1+P.dark*1.4)*(1+P.dark*0.4);   // push shadows down
+    l=Math.pow(l,1+P.dark*1.4)*(1+P.dark*0.4);   // 暗い部分をさらに暗くする（暗部の深さ）
     l=clamp(l,0.02,0.72);
     const [r,g,b]=hsl2rgb(h,s,l);cr[n]=r;cg[n]=g;cb[n]=b;cl[n]=l;
+    // ガラス片ごとに「光が当たる向き」をランダムに決めておく（面の立体感に使う）
     const a=rnd()*Math.PI*2;dirx[n]=Math.cos(a);diry[n]=Math.sin(a);}
 
-  // ---- paint facets + borders ----
+  // ===== 6. ガラス片を塗る =====
+  // 片の中で、光の向きに沿って明るさを少し変えると、平らな面が立体的に見える
   const out=ctx.createImageData(W,H);const o=out.data;
+  if(P.useGlass){
   for(let y=0;y<H;y++)for(let x=0;x<W;x++){const i=y*W+x,n=label[i],j=i*4;
     const sh=1+P.facet*0.55*((x-sx[n])*dirx[n]+(y-sy[n])*diry[n])/cs;
     let r=cr[n]*sh,g=cg[n]*sh,b=cb[n]*sh;
+    // となり（右か下）が別のガラス片なら、そこは境界線
     const isB=(x<W-1&&label[i+1]!==n)||(y<H-1&&label[i+W]!==n);
     if(isB){
-      // bright neon seam or dark lead-line depending on setting
+      // 境界線を明るく光らせる（境界線の明るさ）。輪郭の近くの片ほど明るくなる
       const k=P.border;const bl=0.35+0.65*me[n]/(cnt[n]||1);
       r=r*(1-k)*0.4+k*Math.min(255,cr[n]*2.2+60)*bl; g=g*(1-k)*0.4+k*Math.min(255,cg[n]*2.2+60)*bl; b=b*(1-k)*0.4+k*Math.min(255,cb[n]*2.2+60)*bl;
     }
     o[j]=clamp(r,0,255);o[j+1]=clamp(g,0,255);o[j+2]=clamp(b,0,255);o[j+3]=255;}
+  }else{
+    // ガラス片オフ：分割せず、写真の1ピクセルずつに同じ色の調整（彩度・色相・暗部）をかける
+    for(let y=0;y<H;y++){for(let x=0;x<W;x++){const i=y*W+x,j=i*4;
+      let [h,s2,l]=rgb2hsl(src[j],src[j+1],src[j+2]);
+      h+=P.hue+P.chaos*noise(x*nsc,y*nsc);
+      s2=clamp(s2*P.sat+0.15*P.sat,0,1);
+      l=clamp(0.5+(l-0.5)*1.35,0.03,0.85);
+      l=clamp(Math.pow(l,1+P.dark*1.4)*(1+P.dark*0.4),0.02,0.72);
+      const [r,g,b]=hsl2rgb(h,s2,l);o[j]=r;o[j+1]=g;o[j+2]=b;o[j+3]=255;}}
+  }
   ctx.putImageData(out,0,0);
+  // 光の線の色を決めるときに使う：その場所の色を返す
+  const colorAt=i=>P.useGlass?[cr[label[i]],cg[label[i]],cb[label[i]]]:[o[i*4],o[i*4+1],o[i*4+2]];
 
-  // ---- light strokes (flow along edges + radial whiskers) ----
-  const M=Math.round(P.strokes*(W*H)/(1200*1200));
+  // ===== 7. 光の線を描く =====
+  // 'lighter' は光の足し算（加法混色）。線が重なるほど明るくなり、白に近づく。
+  const M=P.useLines?Math.round(P.strokes*(W*H)/(1200*1200)):0;   // 光の線がオフなら0本
   const step=Math.max(1.2,Math.max(W,H)/700);const lenScale=Math.max(W,H)/1200;
   ctx.globalCompositeOperation='lighter';ctx.lineCap='round';ctx.lineJoin='round';
   for(let k=0;k<M;k++){
     let x,y,tries=0,i;
+    // 線の出発点：輪郭が強い場所ほど選ばれやすい
     do{x=rnd()*W;y=rnd()*H;i=(y|0)*W+(x|0);tries++;}while(tries<40&&rnd()>mag[i]*mag[i]*1.5+0.008);
-    const n=label[i];
-    const [h0,s0,l0]=rgb2hsl(cr[n],cg[n],cb[n]);
+    const [h0,s0,l0]=rgb2hsl(...colorAt(i));
     const h=h0+(rnd()-0.5)*(30+P.chaos*0.6);
+    // 線の色：出発点のガラス片の色をもとに、彩度を最大にして少しだけ色相をずらす
     const [r,g,b]=hsl2rgb(h,1,clamp(0.5+rnd()*0.25,0,1));
+    // radial＝輪郭から外へ伸びる線（ヒゲのような線）。そうでなければ輪郭に沿って流れる線
     const radial=rnd()<P.radial;
     const steps=Math.round(P.len*lenScale*(0.3+rnd()*1.2)/step*2);
-    const fa=noise(x*nsc*2,y*nsc*2)*Math.PI*2;  // fallback flow in flat areas
+    const fa=noise(x*nsc*2,y*nsc*2)*Math.PI*2;  // 輪郭がない平らな場所では、ノイズで決めた向きに流す
     let px=sgx[i],py=sgy[i];let m=Math.hypot(px,py)||1;
     let dx=radial?px/m:-py/m,dy=radial?py/m:px/m;
     if(mag[i]<0.25){const q=mag[i]/0.25;dx=dx*q+Math.cos(fa)*(1-q);dy=dy*q+Math.sin(fa)*(1-q);const d=Math.hypot(dx,dy)||1;dx/=d;dy/=d;}
     if(rnd()<0.5){dx=-dx;dy=-dy}
     const pts=[x,y];
+    // 少しずつ進みながら、その場所の輪郭の向きに合わせて進行方向を曲げていく
     for(let s=0;s<steps;s++){
       const ii=(clamp(y,0,H-1)|0)*W+(clamp(x,0,W-1)|0);
       let ax=sgx[ii],ay=sgy[ii];const am=Math.hypot(ax,ay);
@@ -393,12 +484,13 @@ function render(){
         const w=(radial?0.15:0.45)*lm; dx=dx*(1-w)+tx*w; dy=dy*(1-w)+ty*w; }
       if(lm<1){const na=noise(x*nsc*2,y*nsc*2)*Math.PI*2;let nx=Math.cos(na),ny=Math.sin(na);if(nx*dx+ny*dy<0){nx=-nx;ny=-ny}
         const w=0.2*(1-lm);dx=dx*(1-w)+nx*w;dy=dy*(1-w)+ny*w;}
-      // a little wander
+      // 少しだけふらつかせて、手描きっぽい自然な線にする
       const wa=(rnd()-0.5)*0.25;const cdx=dx*Math.cos(wa)-dy*Math.sin(wa),cdy=dx*Math.sin(wa)+dy*Math.cos(wa);
       const dm=Math.hypot(cdx,cdy)||1;dx=cdx/dm;dy=cdy/dm;
       x+=dx*step;y+=dy*step;if(x<0||y<0||x>=W||y>=H)break;pts.push(x,y);}
     if(pts.length<4)continue;
     const lw=P.width*lenScale*(0.4+rnd()*1.0);
+    // 太くて薄い線（にじみ）→ 細くて濃い線（芯）の順に2回描くと、光っているように見える
     const col=`${r|0},${g|0},${b|0}`;
     ctx.beginPath();ctx.moveTo(pts[0],pts[1]);for(let q=2;q<pts.length;q+=2)ctx.lineTo(pts[q],pts[q+1]);
     ctx.strokeStyle=`rgba(${col},0.07)`;ctx.lineWidth=lw*4;ctx.stroke();
@@ -406,8 +498,9 @@ function render(){
   }
   ctx.globalCompositeOperation='source-over';
 
-  // ---- bloom ----
-  if(P.glow>0){
+  // ===== 8. 発光（グロー） =====
+  // 絵をぼかして明るくしたものを上に重ねる。明るい部分のまわりに光がにじむ
+  if(P.useGlow&&P.glow>0){
     const bc=document.createElement('canvas');bc.width=W;bc.height=H;const bx=bc.getContext('2d');
     const rad=Math.max(2,Math.round(Math.max(W,H)/90));
     bx.filter=`blur(${rad}px) brightness(1.3)`;bx.drawImage(cv,0,0);
@@ -415,12 +508,13 @@ function render(){
     ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';
   }
 
-  // ---- kaleidoscope (mirror symmetry) ----
+  // ===== 9. 万華鏡 =====
+  // 中心から扇形に切り取り、鏡のように反転させながら一周並べる
   let art=cv;
   if(P.kal>=2){
     const kc=document.createElement('canvas');kc.width=W;kc.height=H;const kx=kc.getContext('2d');
     const th=Math.PI/P.kal,R=Math.hypot(W,H),cx=W/2,cy=H/2;
-    // enlarge the source so the mirrored wedge never runs past the photo's edge
+    // 扇形が写真の外にはみ出さないよう、写真を少し拡大してから使う
     let minEdge=1e9;for(let q=0;q<=20;q++){const a=th*q/20;minEdge=Math.min(minEdge,Math.min(cx/Math.max(1e-6,Math.abs(Math.cos(a))),cy/Math.max(1e-6,Math.abs(Math.sin(a)))));}
     const f=Math.max(1,(R/2)/minEdge);
     for(let k=0;k<P.kal;k++)for(const m of [1,-1]){
@@ -429,7 +523,9 @@ function render(){
       kx.drawImage(cv,-cx*f,-cy*f,W*f,H*f);kx.restore();}
     art=kc;
   }
-  // ---- fractal repetition: the picture grows smaller copies of itself, which grow copies, ... ----
+  // ===== 10. フラクタルの繰り返し =====
+  // 絵を丸く切り抜いた「モチーフ」を作り、そのまわりに縮小コピーを並べる。
+  // さらに、そのコピーのまわりにもっと小さなコピーを並べる…を「深さ」の回数だけ繰り返す（自己相似）。
   if(P.depth>0){
     const S=Math.round(Math.min(W,H));
     const mc=document.createElement('canvas');mc.width=S;mc.height=S;const mx=mc.getContext('2d');
@@ -440,6 +536,7 @@ function render(){
     const fc=document.createElement('canvas');fc.width=W;fc.height=H;const fx=fc.getContext('2d');
     fx.drawImage(art,0,0);
     const tw=P.twist*Math.PI/180;
+    // rec は自分自身を呼び出す関数（再帰）。子ども → 親の順に描くので、親が手前に来る
     const rec=(x,y,rad,ang,lv)=>{
       if(rad<2)return;
       if(lv<P.depth){for(let j=0;j<P.copies;j++){const a=ang+j*2*Math.PI/P.copies+tw;const d=rad*(1+P.fscale)*0.85;
@@ -451,22 +548,24 @@ function render(){
   }
   if(art!==cv){ctx.clearRect(0,0,W,H);ctx.drawImage(art,0,0);}
 
-  // ---- monochrome mix ----
+  // ===== 11. 色の量（白黒） =====
+  // 各ピクセルの明るさ(グレー)と元の色を、「色の量」の割合で混ぜる。0なら完全な白黒
   if(P.color<1){
     const id=ctx.getImageData(0,0,W,H),d=id.data,c=P.color;
     for(let j=0;j<d.length;j+=4){
       let y=0.299*d[j]+0.587*d[j+1]+0.114*d[j+2];
-      y=255*Math.pow(y/255,0.9);              // keep highlights crisp
+      y=255*Math.pow(y/255,0.9);              // 明るい部分をくっきりさせる
       d[j]=y+(d[j]-y)*c;d[j+1]=y+(d[j+1]-y)*c;d[j+2]=y+(d[j+2]-y)*c;}
     ctx.putImageData(id,0,0);
   }
 
-  // ---- two-colour tone mapping: dark parts -> ground colour, bright lines -> line colour ----
+  // ===== 12. 2色テーマ =====
+  // 暗いところ→地の色、明るいところ→線の色、になるような対応表(LUT)を作って塗りかえる
   if(P.tone==='duo'){
     const hex=h=>[1,3,5].map(i=>parseInt(h.substr(i,2),16));
     const B=hex(P.bg),I=hex(P.ink);
     const light=(0.299*B[0]+0.587*B[1]+0.114*B[2])/255>0.5;
-    // the brightest highlights go past the line colour: toward black on a light ground, toward white on a dark one
+    // いちばん明るい部分は線の色よりさらに強調する（白地なら黒寄り、黒地なら白寄り）
     const Hc=I.map(v=>light?v*0.3:v+(255-v)*0.7);
     const mix=(a,b,u)=>a.map((v,i)=>v+(b[i]-v)*u);
     const stops=[[0,B],[0.45,mix(B,I,0.5)],[0.85,I],[1,Hc]];
@@ -475,7 +574,7 @@ function render(){
       const a=stops[k],b=stops[k+1],u=clamp((t-a[0])/(b[0]-a[0]),0,1);
       for(let c=0;c<3;c++)lut[v*3+c]=a[1][c]+(b[1][c]-a[1][c])*u;}
     const id=ctx.getImageData(0,0,W,H),d=id.data;
-    // auto-levels: spread the brightness so very bright (or dark) photos still keep detail
+    // 自動補正：明るさの分布(ヒストグラム)を広げて、明るすぎる写真でも濃淡が残るようにする
     const hist=new Float64Array(256),Y=new Uint8Array(d.length/4);
     for(let j=0,q=0;j<d.length;j+=4,q++){const y=(0.299*d[j]+0.587*d[j+1]+0.114*d[j+2])|0;Y[q]=y;hist[y]++;}
     const cdf=new Float64Array(256);let acc=0;for(let v=0;v<256;v++){acc+=hist[v];cdf[v]=acc/Y.length;}
@@ -487,17 +586,21 @@ function render(){
     ctx.putImageData(id,0,0);
   }
 
+  // ===== 完成：画像として表示 =====
+  lastCanvas=cv;   // 保存ボタン用に、完成した絵を覚えておく
   $('result').src=cv.toDataURL('image/png');
-  $('status').textContent=`${W}×${H}px ・ ガラス片 ${N} ・ 光の線 ${M} ・ ${((performance.now()-t0)/1000).toFixed(1)}秒`;
+  $('status').textContent=`${W}×${H}px ・ ガラス片 ${P.useGlass?N:'オフ'} ・ 光の線 ${P.useLines?M:'オフ'} ・ ${((performance.now()-t0)/1000).toFixed(1)}秒`;
 }
 
+// スライダーを動かすたびに毎回描き直すと重いので、
+// 動きが止まってから少し待って1回だけ描き直す
 let timer=null;
 function schedule(){
   clearTimeout(timer);$('status').textContent='描画中…';
   timer=setTimeout(()=>requestAnimationFrame(()=>setTimeout(()=>{try{render()}catch(e){$('status').textContent='エラー: '+e.message}},0)),180);
 }
 
-// ---------- wiring ----------
+// ---------- ボタンやスライダーと処理をつなぐ ----------
 for(const k of KEYS)$(k).addEventListener('input',()=>{showVals();schedule()});
 for(const k of ['bg','ink']){$(k).addEventListener('input',()=>{$('tone').value='duo';markTheme();schedule()});}
 function markTheme(){const cur=$('tone').value==='none'?'none':$('bg').value+','+$('ink').value;
@@ -512,11 +615,34 @@ const drop=$('drop');
 ['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('over')}));
 ['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('over')}));
 drop.addEventListener('drop',e=>loadFile(e.dataTransfer.files[0]));
+// ---------- 画像の保存 ----------
+// claude.ai 上では「downloads」機能を使って保存する（保存前に確認画面が出る）。
+// それ以外（パソコンでファイルを直接開いたときなど）は、ふつうのダウンロードで保存する。
+let downloadsApi=null;
+// 保存機能の準備は、ほかの処理を止めないよう、失敗しても無視して進める
+try{if(window.claude&&typeof window.claude.use==='function'){Promise.resolve(window.claude.use('downloads')).then(d=>{downloadsApi=d;}).catch(()=>{});}}catch(e){}
+function fileName(){
+  const d=new Date(),p=n=>String(n).padStart(2,'0');
+  return `fractal_${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.png`;
+}
 $('save').onclick=()=>{
-  const src=$('result').src;if(!src)return;
-  const w=window.open();
-  if(w){w.document.write(`<title>fractal</title><body style="margin:0;background:#000"><img src="${src}" style="max-width:100%"></body>`);}
-  else{$('saveHint').textContent='画像を右クリック（スマホは長押し）→「画像を保存」で保存できます。';}
+  if(!lastCanvas){$('saveHint').textContent='まだ画像ができていません。少し待ってからもう一度押してください。';return;}
+  lastCanvas.toBlob(async blob=>{
+    const name=fileName();
+    if(downloadsApi){
+      try{await downloadsApi.save({filename:name,data:blob});$('saveHint').textContent='保存しました：'+name;}
+      catch(e){
+        if(e&&e.code==='declined')$('saveHint').textContent='保存をキャンセルしました。';
+        else if(e&&e.code==='rate_limited')$('saveHint').textContent='少し待ってから、もう一度押してください。';
+        else $('saveHint').textContent='ここでは保存できませんでした。画像を右クリック（スマホは長押し）→「画像を保存」で保存してください。';
+      }
+      return;
+    }
+    // claude.ai の外で開いているとき：ふつうのダウンロード
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;
+    document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+    $('saveHint').textContent='保存しました：'+name;
+  },'image/png');
 };
 $('saveHint').textContent='画像を右クリック／長押しでも保存できます。';
 
@@ -526,9 +652,11 @@ document.querySelectorAll('[data-tool]').forEach(b=>b.onclick=()=>setTool(b.data
 $('brush').oninput=()=>{TOOL_SIZE[tool]=+$('brush').value;$('v_brush').textContent=$('brush').value;};
 $('undo').onclick=()=>{const s=undoStack.pop();if(!s)return;[gLine,gDet].forEach((c,i)=>{const x=c.getContext('2d');x.clearRect(0,0,c.width,c.height);x.drawImage(s[i],0,0);});drawEditView();schedule();};
 $('clearG').onclick=()=>{if(!gLine)return;pushUndo();[gLine,gDet].forEach(c=>c.getContext('2d').clearRect(0,0,c.width,c.height));drawEditView();schedule();};
+// 元の写真の上で、指やマウスで線を引く処理
 (function(){
   const ec=$('editCv');let last=null;
   const pos=e=>{const r=ec.getBoundingClientRect();return [(e.clientX-r.left)*ec.width/r.width,(e.clientY-r.top)*ec.height/r.height,ec.width/r.width];};
+  // 前の位置から今の位置まで線を引く（消しゴムのときは描いたものを消す）
   const seg=(a,b)=>{const k=b[2];const sz=TOOL_SIZE[tool]*k;
     const targets=tool==='erase'?[gLine,gDet]:[tool==='line'?gLine:gDet];
     for(const c of targets){const x=c.getContext('2d');x.save();
@@ -541,7 +669,15 @@ $('clearG').onclick=()=>{if(!gLine)return;pushUndo();[gLine,gDet].forEach(c=>c.g
   const end=()=>{if(last){last=null;schedule();}};
   ec.addEventListener('pointerup',end);ec.addEventListener('pointercancel',end);
 })();
-setParams(PRESETS.neon);markTheme();
+// 最初は「ネオン」の設定で、見本の絵を表示する
+// チェックを外したセクションのスライダーを薄く表示する
+function dimSections(){
+  for(const [id,sec] of [['useGlass',$('useGlass').closest('.sec')],['useLines',$('useLines').closest('.sec')]]){
+    let el=sec.nextElementSibling;while(el&&!el.classList.contains('sec')){el.classList.toggle('off',!$(id).checked);el=el.nextElementSibling;}}
+  $('glow').classList.toggle('off',!$('useGlow').checked);
+}
+for(const k of BKEYS)$(k).addEventListener('change',()=>{dimSections();schedule();});
+setParams(PRESETS.neon);markTheme();dimSections();
 makeSample();
 </script>
 </body>
